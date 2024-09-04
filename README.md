@@ -1,2 +1,2 @@
-You can add the bot from this link: ...
-Use !help to see the commands in the bot.
+!yardım komutuyla tüm komutları ve onları nasıl kullanacağını görebilirsin.\n
+Bu linkle botu sunucuna ekleyebilirsin: Henüz yok.
