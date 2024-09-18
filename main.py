@@ -39,4 +39,4 @@ async def yüz_algıla(ctx):
 async def nesne_tespiti(ctx):
     await nesne_tespiti(ctx)
 
-bot.run('MTI3NDMwNDI1NTM1MTg0OTA0MQ.GEWkvj.i7gZcvlGyLFff_b6EyvujnKsl3qU-xH7wua2_U')
+bot.run('TOKEN')
