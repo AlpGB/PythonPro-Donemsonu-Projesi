@@ -8,6 +8,8 @@ from torchvision.models.detection import fasterrcnn_resnet50_fpn
 import torchvision.transforms as T
 from PIL import Image
 import aiohttp
+import uuid
+import asyncio
 
 IMAGE_DIR = "/Users/evrimbayrak/Desktop/AI Bot Folder/"
 HUGGINGFACE_API_KEY = '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'
@@ -69,7 +71,7 @@ async def yardım_komutu(ctx):
         "`!foto <açıklama>` - Stable Diffusion kullanarak açıklamaya dayalı bir görüntü oluşturur.\n"
         "`!algıla` - Ekli resimdeki nesneleri algılar.\n"
         "`!sesten_yazıya` - Ekli ses dosyasını metne dönüştürür.\n"
-        "`!nesne_tespiti` - Ekli resimdeki nesneler hakkında bilgi verir.\n"
+        "`!nesne_bilgisi` - Ekli resimdeki nesneler hakkında bilgi verir.\n"
         "`!yüz_algıla` - Ekli resimdeki yüzleri algılar."
     )
     await ctx.send(yardım_mesajı)
@@ -168,48 +170,24 @@ async def yüz_algila_komutu(ctx):
         await ctx.send("Yüz algılama için lütfen bir resim ekleyin.")
 
 
-async def nesne_tespiti(ctx):
+async def nesne_bilgisi_komutu(ctx):
     if ctx.message.attachments:
         if len(ctx.message.attachments) > 0:
             attachment = ctx.message.attachments[0]
             if attachment.filename.endswith(('png', 'jpg', 'jpeg')):
-                image_path = os.path.join(IMAGE_DIR, attachment.filename)
+                unique_filename = f"{uuid.uuid4()}_{attachment.filename}"
+                image_path = os.path.join(IMAGE_DIR, unique_filename)
+
                 await attachment.save(image_path)
                 try:
-                    image = Image.open(image_path).convert("RGB")
-                    image_tensor = transform(image).unsqueeze(0)
-                    with torch.no_grad():
-                        predictions = model(image_tensor)
-                    labels = predictions[0]['labels']
-                    scores = predictions[0]['scores']
-                    object_names = {
-                        1: 'kişi', 2: 'bisiklet', 3: 'araba', 4: 'motor', 5: 'uçak', 6: 'otobüs',
-                        7: 'tren', 8: 'kamyon', 9: 'bot', 10: 'trafik lambası', 11: 'yangın musluğu',
-                        12: 'zebra geçidi', 13: 'park sayacı', 14: 'bank', 15: 'kuş', 16: 'kedi',
-                        17: 'köpek', 18: 'at', 19: 'koyun', 20: 'inek', 21: 'fil', 22: 'ayı', 23: 'yılan',
-                        24: 'sandalye', 25: 'koltuk', 26: 'çanta', 27: 'şemsiye', 28: 'top', 29: 'frizbi',
-                        30: 'kaykay', 31: 'surf tahtası', 32: 'tenis raketi', 33: 'şişe', 34: 'şarap kadehi',
-                        35: 'fincan', 36: 'çatal', 37: 'bıçak', 38: 'kaşık', 39: 'kase', 40: 'muz',
-                        41: 'klavye', 42: 'sandviç', 43: 'portakal', 44: 'brokoli', 45: 'havuç', 46: 'hotdog',
-                        47: 'pizza', 48: 'donut', 49: 'kek', 50: 'klavye', 51: 'telefon', 52: 'uzaktan kumanda',
-                        53: 'elma', 54: 'fare', 55: 'dizüstü bilgisayar', 56: 'monitör', 57: 'ekmek',
-                        58: 'tenis topu', 59: 'kamera', 60: 'mikrodalga', 61: 'fırın', 62: 'buzdolabı',
-                        63: 'tost makinesi', 64: 'mutfak lavabosu', 65: 'yatak', 66: 'masa', 67: 'tuvalet',
-                        68: 'bilgisayar', 69: 'çeşme', 70: 'gitar', 71: 'motosiklet kaskı', 72: 'beyzbol sopası',
-                        73: 'şapka', 74: 'kitap', 75: 'mum', 76: 'yorgan', 77: 'perde', 78: 'oyuncak', 79: 'ayna',
-                        80: 'duş başlığı'
-                    }
-                    detected_objects = []
-                    for i, score in enumerate(scores):
-                        if score > 0.8:
-                            label = labels[i].item()
-                            object_name = object_names.get(label, 'bir nesne')
-                            detected_objects.append(object_name)
-                    if detected_objects:
-                        response = "Resimde şunları buldum: " + ', '.join(detected_objects)
+                    bilgi = await analyze_image_for_objects(image_path)
+                    print(bilgi)  
+
+                    if isinstance(bilgi, list):
+                        objects_info = ', '.join([obj['label'] for obj in bilgi])
+                        await ctx.send(f"Nesneler: {objects_info}")
                     else:
-                        response = "Resimde belirgin bir nesne bulamadım."
-                    await ctx.send(response)
+                        await ctx.send(f"API'den beklenmedik bir yanıt alındı: {bilgi}")
                 except Exception as e:
                     await ctx.send(f"Bir hata oluştu: {e}")
                 finally:
@@ -218,4 +196,43 @@ async def nesne_tespiti(ctx):
             else:
                 await ctx.send("Lütfen geçerli bir resim dosyası ekleyin (PNG/JPG).")
     else:
-        await ctx.send("Nesne bilgisi için lütfen bir resim ekleyin.")
+        await ctx.send("Nesne bilgisi almak için lütfen bir resim ekleyin.")
+
+async def analyze_image_for_objects(image_path):
+    try:
+        return await nesne_bilgisi_api(image_path)
+    except Exception as e:
+        return f"Bir hata oluştu: {e}"
+async def nesne_bilgisi_api(image_path, retries=3, delay=30):
+    headers = {
+        'Authorization': f'Bearer {HUGGINGFACE_API_KEY}',
+    }
+
+    for attempt in range(retries):
+        try:
+            async with aiohttp.ClientSession() as session:
+                with open(image_path, 'rb') as image_file:
+                    data = aiohttp.FormData()
+                    data.add_field('file', image_file, filename=os.path.basename(image_path), content_type='image/jpeg')
+
+                    async with session.post(HUGGINGFACE_API_URL, headers=headers, data=data) as response:
+                        if response.status == 200:
+                            try:
+                                return await response.json()
+                            except aiohttp.ContentTypeError:
+                                raise Exception("API response is not valid JSON")
+                        elif response.status in [503, 500]:
+                            print(f"Girişim {attempt + 1}/{retries} başarısız oldu: {response.status}")
+                            if attempt < retries - 1:
+                                await asyncio.sleep(delay)
+                            else:
+                                raise Exception(f"API hatası {response.status}")
+                        else:
+                            response_text = await response.text()
+                            raise Exception(f"API hatası {response.status}: {response_text}")
+        except aiohttp.ClientError as e:
+            print(f"İstek hatası: {e}")
+            if attempt < retries - 1:
+                await asyncio.sleep(delay)
+            else:
+                raise Exception(f"{retries} girişimden sonra istek başarısız oldu: {e}")
